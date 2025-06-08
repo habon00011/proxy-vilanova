@@ -30,7 +30,7 @@ app.get("/api/streams", async (req, res) => {
 
     const access_token = tokenRes.data.access_token;
 
-    const streamers = ["maryymme"];
+    const streamers = ["habon1234"];
 
     const streamsRes = await axios.get(
       `https://api.twitch.tv/helix/streams?user_login=${streamers.join("&user_login=")}`,
