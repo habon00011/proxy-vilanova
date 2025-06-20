@@ -21,8 +21,8 @@ app.get("/players", async (req, res) => {
 // 🔴 Ruta para streamers
 app.get("/api/streams", async (req, res) => {
   try {
-    const client_id = process.env.TWITCH_CLIENT_ID;
-    const client_secret = process.env.TWITCH_CLIENT_SECRET;
+    const client_id = "gau216jyhd0ynqaxy4laxjz0wg54q7";
+    const client_secret = "j3ot53t5xto6hqadus17ho1xeiax0x";
 
     // Obtener token
     const tokenRes = await axios.post(
