@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
@@ -10,7 +11,7 @@ app.use(cors());
 // 🚗 Ruta para jugadores
 app.get("/players", async (req, res) => {
   try {
-    const response = await axios.get("http://185.230.55.63:4000/players");
+    const response = await axios.get(`${process.env.FIVEM_IP}players`);
     res.json(response.data);
   } catch (error) {
     res.status(500).json({ error: "No se pudo obtener la respuesta de la API" });
@@ -20,8 +21,8 @@ app.get("/players", async (req, res) => {
 // 🔴 Ruta para streamers
 app.get("/api/streams", async (req, res) => {
   try {
-    const client_id = "gau216jyhd0ynqaxy4laxjz0wg54q7";
-    const client_secret = "j3ot53t5xto6hqadus17ho1xeiax0x";
+    const client_id = process.env.TWITCH_CLIENT_ID;
+    const client_secret = process.env.TWITCH_CLIENT_SECRET;
 
     // Obtener token
     const tokenRes = await axios.post(
@@ -69,12 +70,12 @@ app.get("/api/youtube-videos", async (req, res) => {
     return res.json(cacheVideos.videos);
   }
 
-  const API_KEY = "AIzaSyCiYbegbsgiTOQElhAPU9KZQIVoIyELm0o";
+  const API_KEY = process.env.YOUTUBE_API_KEY;
   const CHANNEL_IDS = [
     "UCaY_-ksFSQtTGk0y1HA_3YQ", // Canal 1
-  "UCtWY35eYO7jI9LnCRJxBGRQ", // Canal 2
-  "UCJz1mSzye0zdRpTDPiYaGfQ", // Canal 3
-  "UCX6OQ3DkcsbYNE6H8uQQuVA",
+    "UCtWY35eYO7jI9LnCRJxBGRQ", // Canal 2
+    "UCJz1mSzye0zdRpTDPiYaGfQ", // Canal 3
+    "UCX6OQ3DkcsbYNE6H8uQQuVA",
   ];
   const PALABRAS_CLAVE = [""];
   const MAX_RESULTADOS = 15;
