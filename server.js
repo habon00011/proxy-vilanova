@@ -71,10 +71,12 @@ app.get("/api/youtube-videos", async (req, res) => {
 
   const API_KEY = "AIzaSyCiYbegbsgiTOQElhAPU9KZQIVoIyELm0o";
   const CHANNEL_IDS = [
-    "UCaY_-ksFSQtTGk0y1HA_3YQ",
-    "otro_canal_ID_aqui" // puedes añadir más
+    "UCaY_-ksFSQtTGk0y1HA_3YQ", // Canal 1
+  "UCtWY35eYO7jI9LnCRJxBGRQ", // Canal 2
+  "UCJz1mSzye0zdRpTDPiYaGfQ", // Canal 3
+  "UCX6OQ3DkcsbYNE6H8uQQuVA",
   ];
-  const PALABRAS_CLAVE = ["vuelvo", "vilanova", "directo"];
+  const PALABRAS_CLAVE = [""];
   const MAX_RESULTADOS = 15;
 
   const getDurationInSeconds = (iso) => {
