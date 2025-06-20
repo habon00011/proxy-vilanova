@@ -11,7 +11,7 @@ app.use(cors());
 // 🚗 Ruta para jugadores
 app.get("/players", async (req, res) => {
   try {
-    const response = await axios.get(`${process.env.FIVEM_IP}players`);
+    const response = await axios.get(`${process.env.FIVEM_IP}/players`);
     res.json(response.data);
   } catch (error) {
     res.status(500).json({ error: "No se pudo obtener la respuesta de la API" });
