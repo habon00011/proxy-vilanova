@@ -18,7 +18,7 @@ app.get("/players", async (req, res) => {
   }
 });
 
-// 🔴 Ruta para streamers
+// 🔴 Ruta para streamers TWITCH
 app.get("/api/streams", async (req, res) => {
   try {
     const client_id = process.env.TWITCH_CLIENT_ID;
@@ -31,7 +31,7 @@ app.get("/api/streams", async (req, res) => {
 
     const access_token = tokenRes.data.access_token;
 
-    const streamers = ["habon1234", "shadowkekw"];
+    const streamers = ["habon1234"];
 
     const streamsRes = await axios.get(
       `https://api.twitch.tv/helix/streams?user_login=${streamers.join("&user_login=")}`,
