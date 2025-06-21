@@ -72,7 +72,7 @@ app.get("/api/youtube-videos", async (req, res) => {
 
   const API_KEY = process.env.YOUTUBE_API_KEY;
   const CHANNEL_IDS = [
-    "", // Canal 
+    "UCD2bEZM0Z4HmKpBwPh_lyWg", // Canal 
   ];
   const PALABRAS_CLAVE = [""];
   const MAX_RESULTADOS = 15;
