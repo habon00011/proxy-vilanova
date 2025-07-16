@@ -31,7 +31,7 @@ app.get("/api/streams", async (req, res) => {
 
     const access_token = tokenRes.data.access_token;
 
-    const streamers = ["habon1234", "Vryzeeee1", "vaskitoo_"];
+    const streamers = ["habon1234", "Vryzeeee1", "vaskitoo_", "miiguell_munozz"];
 
     const streamsRes = await axios.get(
       `https://api.twitch.tv/helix/streams?user_login=${streamers.join("&user_login=")}`,
@@ -73,8 +73,9 @@ app.get("/api/youtube-videos", async (req, res) => {
   const API_KEY = process.env.YOUTUBE_API_KEY;
   const CHANNEL_IDS = [
     "UCD2bEZM0Z4HmKpBwPh_lyWg", // Canal 
+    "UCL3NvneOnKeGgKQcekBe31Q",
   ];
-  const PALABRAS_CLAVE = [""];
+  const PALABRAS_CLAVE = ["VilanovaCity"];
   const MAX_RESULTADOS = 15;
 
   const getDurationInSeconds = (iso) => {
