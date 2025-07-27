@@ -154,10 +154,6 @@ app.get("/api/youtube-videos", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Servidor proxy corriendo en el puerto ${PORT}`);
-});
-
 // Nueva ruta de LOCALES
 app.get("/locales", async (req, res) => {
   try {
