@@ -8,6 +8,12 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+
 // 🚗 Ruta para jugadores
 app.get("/players", async (req, res) => {
   try {
@@ -143,6 +149,21 @@ app.get("/api/youtube-videos", async (req, res) => {
   } catch (e) {
     console.error("Error cargando vídeos de YouTube:", e.message);
     res.status(500).json({ error: "Error al cargar vídeos de YouTube" });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor proxy corriendo en el puerto ${PORT}`);
+});
+
+// Nueva ruta de LOCALES
+app.get("/locales", async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM locales ORDER BY id");
+    res.json(rows);
+  } catch (err) {
+    console.error("Error al obtener los locales:", err.message);
+    res.status(500).json({ error: "Error al obtener los locales" });
   }
 });
 
