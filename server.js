@@ -168,3 +168,29 @@ app.get("/locales", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor proxy corriendo en el puerto ${PORT}`);
 });
+
+// Ruta para actualizar el estado de un local (PUT)
+app.put("/locales/:id", express.json(), async (req, res) => {
+  const id = req.params.id;
+  const { estado } = req.body;
+  if (!estado) {
+    return res.status(400).json({ error: "Falta el estado" });
+  }
+
+  try {
+    const result = await pool.query(
+      "UPDATE locales SET estado = $1 WHERE id = $2 RETURNING *",
+      [estado, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Local no encontrado" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Error al actualizar el local:", err.message);
+    res.status(500).json({ error: "Error al actualizar el local" });
+  }
+});
+
