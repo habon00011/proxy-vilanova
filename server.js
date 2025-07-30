@@ -318,13 +318,14 @@ app.put("/streamers/:id", express.json(), async (req, res) => {
   }
 });
 
-router.get('/admin/streamers', async (req, res) => {
+app.get('/admin/streamers', async (req, res) => {
   try {
-    const streamers = await db('streamers').select('*'); // sin filtro
-    res.json(streamers);
+    const { rows } = await pool.query("SELECT * FROM streamers ORDER BY id");
+    res.json(rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error al obtener streamers:", err.message);
     res.status(500).json({ error: 'Error al obtener streamers' });
   }
 });
+
 
