@@ -318,3 +318,13 @@ app.put("/streamers/:id", express.json(), async (req, res) => {
   }
 });
 
+router.get('/admin/streamers', async (req, res) => {
+  try {
+    const streamers = await db('streamers').select('*'); // sin filtro
+    res.json(streamers);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener streamers' });
+  }
+});
+
