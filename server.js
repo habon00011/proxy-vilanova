@@ -280,3 +280,41 @@ setInterval(actualizarEstadoStreamersTwitch, 1000 * 60 * 5);
 app.listen(PORT, () => {
   console.log(`Servidor proxy corriendo en el puerto ${PORT}`);
 });
+
+// Obtener todos los streamers
+app.get("/streamers", async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM streamers ORDER BY id");
+    res.json(rows);
+  } catch (err) {
+    console.error("Error al obtener streamers:", err.message);
+    res.status(500).json({ error: "Error al obtener streamers" });
+  }
+});
+
+// Actualizar el estado de un streamer (true o false)
+app.put("/streamers/:id", express.json(), async (req, res) => {
+  const id = req.params.id;
+  const { estado } = req.body;
+
+  if (typeof estado === "undefined") {
+    return res.status(400).json({ error: "Falta el campo estado" });
+  }
+
+  try {
+    const result = await pool.query(
+      "UPDATE streamers SET estado = $1, ultima_actualizacion = NOW() WHERE id = $2 RETURNING *",
+      [estado, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Streamer no encontrado" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Error al actualizar streamer:", err.message);
+    res.status(500).json({ error: "Error al actualizar streamer" });
+  }
+});
+
