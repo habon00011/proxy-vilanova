@@ -24,26 +24,31 @@ app.get("/players", async (req, res) => {
   }
 });
 
-app.get("/api/streams", async (req, res) => {
+// Revisa automáticamente todos los streamers de la BD y actualiza su estado
+app.get("/actualizar-streamers", async (req, res) => {
   try {
     const client_id = process.env.TWITCH_CLIENT_ID;
     const client_secret = process.env.TWITCH_CLIENT_SECRET;
 
-    // 1. Obtener los streamers desde la base de datos
-    const [streamers] = await connection.promise().query("SELECT user_name FROM streamers");
-
-    // 2. Convertir a array simple de nombres
-    const nombres = streamers.map((s) => s.user_name);
-
-    // 3. Conseguir el token de acceso a Twitch
+    // 1. Conseguir token de acceso
     const tokenRes = await axios.post(
       `https://id.twitch.tv/oauth2/token?client_id=${client_id}&client_secret=${client_secret}&grant_type=client_credentials`
     );
     const access_token = tokenRes.data.access_token;
 
-    // 4. Consultar si están en directo
-    const streamsRes = await axios.get(
-      `https://api.twitch.tv/helix/streams?user_login=${nombres.join("&user_login=")}`,
+    // 2. Obtener streamers desde la base de datos
+    const result = await pool.query("SELECT id, user_name FROM streamers");
+    const streamers = result.rows;
+
+    if (streamers.length === 0) {
+      return res.status(200).json({ mensaje: "No hay streamers en la base de datos." });
+    }
+
+    const logins = streamers.map((s) => s.user_name).join("&user_login=");
+
+    // 3. Pedir a Twitch cuáles están en directo
+    const twitchRes = await axios.get(
+      `https://api.twitch.tv/helix/streams?user_login=${logins}`,
       {
         headers: {
           "Client-ID": client_id,
@@ -52,20 +57,25 @@ app.get("/api/streams", async (req, res) => {
       }
     );
 
-    // 5. Devolver la respuesta simplificada
-    const data = streamsRes.data.data.map((stream) => ({
-      user_name: stream.user_name,
-      title: stream.title,
-      thumbnail: stream.thumbnail_url.replace("{width}", "480").replace("{height}", "270"),
-      url: `https://twitch.tv/${stream.user_login}`,
-    }));
+    const onlineNow = twitchRes.data.data.map((stream) => stream.user_login.toLowerCase());
 
-    res.json(data);
-  } catch (err) {
-    console.error("Error al obtener streams desde BD:", err.response?.data || err.message);
-    res.status(500).json({ error: "Error al obtener streams desde BD" });
+    // 4. Actualizar en la base de datos
+    for (const streamer of streamers) {
+      const estaEnDirecto = onlineNow.includes(streamer.user_name.toLowerCase());
+
+      await pool.query(
+        "UPDATE streamers SET estado = $1, ultima_actualizacion = NOW() WHERE id = $2",
+        [estaEnDirecto, streamer.id]
+      );
+    }
+
+    res.json({ mensaje: "Estados actualizados correctamente." });
+  } catch (error) {
+    console.error("Error al actualizar streamers:", error.message);
+    res.status(500).json({ error: "Error al actualizar streamers" });
   }
 });
+
 
 
 // 🟢 Ruta para vídeos de YouTube combinados y cacheados
