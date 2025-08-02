@@ -24,7 +24,6 @@ app.get("/players", async (req, res) => {
   }
 });
 
-// Revisa automáticamente todos los streamers de la BD y actualiza su estado
 app.get("/actualizar-streamers", async (req, res) => {
   try {
     const client_id = process.env.TWITCH_CLIENT_ID;
@@ -63,10 +62,17 @@ app.get("/actualizar-streamers", async (req, res) => {
     for (const streamer of streamers) {
       const estaEnDirecto = onlineNow.includes(streamer.user_name.toLowerCase());
 
-      await pool.query(
-        "UPDATE streamers SET estado = $1, ultima_actualizacion = NOW() WHERE id = $2",
-        [estaEnDirecto, streamer.id]
-      );
+      if (estaEnDirecto) {
+        await pool.query(
+          "UPDATE streamers SET estado = true, ultima_actualizacion = NOW() WHERE id = $1",
+          [streamer.id]
+        );
+      } else {
+        await pool.query(
+          "UPDATE streamers SET estado = false WHERE id = $1",
+          [streamer.id]
+        );
+      }
     }
 
     res.json({ mensaje: "Estados actualizados correctamente." });
@@ -75,6 +81,7 @@ app.get("/actualizar-streamers", async (req, res) => {
     res.status(500).json({ error: "Error al actualizar streamers" });
   }
 });
+
 
 
 
