@@ -23,19 +23,18 @@ app.get("/players", async (req, res) => {
     res.status(500).json({ error: "No se pudo obtener la respuesta de la API" });
   }
 });
+//Ruta de directos
 
 app.get("/actualizar-streamers", async (req, res) => {
   try {
     const client_id = process.env.TWITCH_CLIENT_ID;
     const client_secret = process.env.TWITCH_CLIENT_SECRET;
 
-    // 1. Conseguir token de acceso
     const tokenRes = await axios.post(
       `https://id.twitch.tv/oauth2/token?client_id=${client_id}&client_secret=${client_secret}&grant_type=client_credentials`
     );
     const access_token = tokenRes.data.access_token;
 
-    // 2. Obtener streamers desde la base de datos
     const result = await pool.query("SELECT id, user_name FROM streamers");
     const streamers = result.rows;
 
@@ -45,7 +44,6 @@ app.get("/actualizar-streamers", async (req, res) => {
 
     const logins = streamers.map((s) => s.user_name).join("&user_login=");
 
-    // 3. Pedir a Twitch cuáles están en directo
     const twitchRes = await axios.get(
       `https://api.twitch.tv/helix/streams?user_login=${logins}`,
       {
@@ -56,25 +54,22 @@ app.get("/actualizar-streamers", async (req, res) => {
       }
     );
 
-    const streamsActivos = twitchRes.data.data;
+    const onlineNow = twitchRes.data.data;
 
-    // 4. Actualizar en la base de datos
     for (const streamer of streamers) {
-      const streamEnCurso = streamsActivos.find(
-        (s) => s.user_login.toLowerCase() === streamer.user_name.toLowerCase()
+      const stream = onlineNow.find(
+        s => s.user_login.toLowerCase() === streamer.user_name.toLowerCase()
       );
 
-      if (streamEnCurso && streamEnCurso.title.toLowerCase().includes("vilanovacity")) {
-        await pool.query(
-          "UPDATE streamers SET estado = true, ultima_actualizacion = NOW() WHERE id = $1",
-          [streamer.id]
-        );
-      } else {
-        await pool.query(
-          "UPDATE streamers SET estado = false WHERE id = $1",
-          [streamer.id]
-        );
-      }
+      const titulo = stream?.title?.toLowerCase() || "";
+      const hablaDeVilanova = titulo.includes("vilanovacity") || titulo.includes("vilanova city");
+
+      const estaEnDirecto = !!stream && hablaDeVilanova;
+
+      await pool.query(
+        "UPDATE streamers SET estado = $1, ultima_actualizacion = NOW() WHERE id = $2",
+        [estaEnDirecto, streamer.id]
+      );
     }
 
     res.json({ mensaje: "Estados actualizados correctamente." });
