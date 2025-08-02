@@ -56,13 +56,15 @@ app.get("/actualizar-streamers", async (req, res) => {
       }
     );
 
-    const onlineNow = twitchRes.data.data.map((stream) => stream.user_login.toLowerCase());
+    const streamsActivos = twitchRes.data.data;
 
     // 4. Actualizar en la base de datos
     for (const streamer of streamers) {
-      const estaEnDirecto = onlineNow.includes(streamer.user_name.toLowerCase());
+      const streamEnCurso = streamsActivos.find(
+        (s) => s.user_login.toLowerCase() === streamer.user_name.toLowerCase()
+      );
 
-      if (estaEnDirecto) {
+      if (streamEnCurso && streamEnCurso.title.toLowerCase().includes("vilanovacity")) {
         await pool.query(
           "UPDATE streamers SET estado = true, ultima_actualizacion = NOW() WHERE id = $1",
           [streamer.id]
@@ -81,8 +83,6 @@ app.get("/actualizar-streamers", async (req, res) => {
     res.status(500).json({ error: "Error al actualizar streamers" });
   }
 });
-
-
 
 
 // 🟢 Ruta para vídeos de YouTube combinados y cacheados
