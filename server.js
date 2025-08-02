@@ -89,6 +89,19 @@ app.get("/actualizar-streamers", async (req, res) => {
   }
 });
 
+// ✅ ELIMINAR STREAMER POR ID (esto es lo que faltaba)
+app.delete("/streamers/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await pool.query("DELETE FROM streamers WHERE id = $1", [id]);
+    res.status(200).json({ mensaje: "Streamer eliminado correctamente" });
+  } catch (error) {
+    console.error("Error al eliminar streamer:", error.message);
+    res.status(500).json({ error: "Error al eliminar streamer" });
+  }
+});
+
 
 // 🟢 Ruta para vídeos de YouTube combinados y cacheados
 let cacheVideos = {
