@@ -65,7 +65,7 @@ app.get("/actualizar-streamers", async (req, res) => {
       );
 
       const titulo = stream?.title?.toLowerCase() || "";
-      const hablaDeVilanova = titulo.includes("vilanovacity") || titulo.includes("vilanova city");
+      const hablaDeVilanova = titulo.includes("faceit") || titulo.includes("faceit");
       const estaEnDirecto = !!stream && hablaDeVilanova;
 
       // Actualizar estado y solo fecha si está en directo
