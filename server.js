@@ -24,21 +24,26 @@ app.get("/players", async (req, res) => {
   }
 });
 
-// 🔴 Ruta antigua de Twitch (puedes borrarla si ya usas la nueva basada en BD)
 app.get("/api/streams", async (req, res) => {
   try {
     const client_id = process.env.TWITCH_CLIENT_ID;
     const client_secret = process.env.TWITCH_CLIENT_SECRET;
 
+    // 1. Obtener los streamers desde la base de datos
+    const [streamers] = await connection.promise().query("SELECT user_name FROM streamers");
+
+    // 2. Convertir a array simple de nombres
+    const nombres = streamers.map((s) => s.user_name);
+
+    // 3. Conseguir el token de acceso a Twitch
     const tokenRes = await axios.post(
       `https://id.twitch.tv/oauth2/token?client_id=${client_id}&client_secret=${client_secret}&grant_type=client_credentials`
     );
     const access_token = tokenRes.data.access_token;
 
-    const streamers = ["habon1234", "Vryzeeee1", "vaskitoo_", "miiguell_munozz", "Zipizpe15", "ErnestoGTAV", "joselaki", "darksidedux", "reloadstyle", "yosoyover"];
-
+    // 4. Consultar si están en directo
     const streamsRes = await axios.get(
-      `https://api.twitch.tv/helix/streams?user_login=${streamers.join("&user_login=")}`,
+      `https://api.twitch.tv/helix/streams?user_login=${nombres.join("&user_login=")}`,
       {
         headers: {
           "Client-ID": client_id,
@@ -47,6 +52,7 @@ app.get("/api/streams", async (req, res) => {
       }
     );
 
+    // 5. Devolver la respuesta simplificada
     const data = streamsRes.data.data.map((stream) => ({
       user_name: stream.user_name,
       title: stream.title,
@@ -56,10 +62,11 @@ app.get("/api/streams", async (req, res) => {
 
     res.json(data);
   } catch (err) {
-    console.error("Error al obtener streams:", err.response?.data || err.message);
-    res.status(500).json({ error: "Error al obtener streams" });
+    console.error("Error al obtener streams desde BD:", err.response?.data || err.message);
+    res.status(500).json({ error: "Error al obtener streams desde BD" });
   }
 });
+
 
 // 🟢 Ruta para vídeos de YouTube combinados y cacheados
 let cacheVideos = {
