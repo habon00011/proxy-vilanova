@@ -55,15 +55,21 @@ app.get("/admin/streamers", async (req, res) => {
   }
 });
 
-// Crear streamer (ahora acepta discord_id y NO obliga URL)
+// Crear streamer (ahora acepta discord_id)
 app.post("/streamers", async (req, res) => {
   try {
     const { user_name, plataforma, url, discord_id, estado = false } = req.body || {};
 
-    if (!user_name || !plataforma) {
-      return res.status(400).json({ error: "user_name y plataforma son obligatorios" });
+    if (!user_name || !plataforma || !url || !discord_id) {
+      return res.status(400).json({ error: "Faltan campos obligatorios (user_name, plataforma, url, discord_id)" });
     }
-    if (discord_id && !/^[0-9]{17,19}$/.test(String(discord_id))) {
+
+    const plataformasPermitidas = ["Twitch", "Kick", "TikTok"];
+    if (!plataformasPermitidas.includes(plataforma)) {
+      return res.status(400).json({ error: "Plataforma no válida" });
+    }
+
+    if (!/^[0-9]{17,19}$/.test(String(discord_id))) {
       return res.status(400).json({ error: "Discord ID inválido (17–19 dígitos numéricos)" });
     }
 
@@ -72,15 +78,16 @@ app.post("/streamers", async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, NOW())
       RETURNING id, user_name, plataforma, url, discord_id, estado, ultima_actualizacion
     `;
-    const params = [user_name.trim(), plataforma, url || null, !!estado, discord_id || null];
+    const params = [user_name.trim(), plataforma, url.trim(), !!estado, String(discord_id)];
     const { rows } = await pool.query(q, params);
 
     res.status(201).json(rows[0]);
   } catch (err) {
-    console.error("Error al añadir streamer:", err.message);
+    console.error("POST /streamers error:", err.message);
     res.status(500).json({ error: "Error al añadir streamer" });
   }
 });
+
 
 // Actualizar streamer por ID (puedes mandar cualquiera de estos: estado, url, discord_id)
 app.put("/streamers/:id", async (req, res) => {
