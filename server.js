@@ -8,6 +8,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
+app.use(express.json({ limit: "5mb" }));
+
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -25,82 +27,110 @@ app.get("/players", async (req, res) => {
 });
 //Ruta de directos
 
-app.get("/actualizar-streamers", async (req, res) => {
+// 🔷 Rutas para STREAMERS (LIMPIO y unificado)
+
+// Listar para la web pública si quieres
+app.get("/streamers", async (req, res) => {
   try {
-    const client_id = process.env.TWITCH_CLIENT_ID;
-    const client_secret = process.env.TWITCH_CLIENT_SECRET;
-
-    // Obtener token de acceso
-    const tokenRes = await axios.post(
-      `https://id.twitch.tv/oauth2/token?client_id=${client_id}&client_secret=${client_secret}&grant_type=client_credentials`
+    const { rows } = await pool.query(
+      "SELECT id, user_name, plataforma, url, discord_id, estado, ultima_actualizacion FROM streamers ORDER BY id"
     );
-    const access_token = tokenRes.data.access_token;
-
-    // Obtener streamers desde la base de datos
-    const result = await pool.query("SELECT id, user_name FROM streamers");
-    const streamers = result.rows;
-
-    if (streamers.length === 0) {
-      return res.status(200).json({ mensaje: "No hay streamers en la base de datos." });
-    }
-
-    const logins = streamers.map((s) => s.user_name).join("&user_login=");
-
-    // Consultar a Twitch los streams en vivo
-    const twitchRes = await axios.get(
-      `https://api.twitch.tv/helix/streams?user_login=${logins}`,
-      {
-        headers: {
-          "Client-ID": client_id,
-          Authorization: `Bearer ${access_token}`,
-        },
-      }
-    );
-
-    const onlineNow = twitchRes.data.data;
-
-    for (const streamer of streamers) {
-      const stream = onlineNow.find(
-        (s) => s.user_login.toLowerCase() === streamer.user_name.toLowerCase()
-      );
-
-      const titulo = stream?.title?.toLowerCase() || "";
-      const hablaDeVilanova = titulo.includes("vilanovacity") || titulo.includes("vilanova city");
-      const estaEnDirecto = !!stream && hablaDeVilanova;
-
-      // Actualizar estado y solo fecha si está en directo
-      if (estaEnDirecto) {
-        await pool.query(
-          "UPDATE streamers SET estado = true, ultima_actualizacion = NOW() WHERE id = $1",
-          [streamer.id]
-        );
-      } else {
-        await pool.query(
-          "UPDATE streamers SET estado = false WHERE id = $1",
-          [streamer.id]
-        );
-      }
-    }
-
-    res.json({ mensaje: "Estados actualizados correctamente." });
-  } catch (error) {
-    console.error("Error al actualizar streamers:", error.message);
-    res.status(500).json({ error: "Error al actualizar streamers" });
+    res.json(rows);
+  } catch (err) {
+    console.error("Error al obtener streamers:", err.message);
+    res.status(500).json({ error: "Error al obtener streamers" });
   }
 });
 
-// ✅ ELIMINAR STREAMER POR ID (esto es lo que faltaba)
-app.delete("/streamers/:id", async (req, res) => {
-  const { id } = req.params;
-
+// Listar para el panel admin (misma info; si quieres añadir más campos, hazlo aquí)
+app.get("/admin/streamers", async (req, res) => {
   try {
-    await pool.query("DELETE FROM streamers WHERE id = $1", [id]);
-    res.status(200).json({ mensaje: "Streamer eliminado correctamente" });
-  } catch (error) {
-    console.error("Error al eliminar streamer:", error.message);
-    res.status(500).json({ error: "Error al eliminar streamer" });
+    const { rows } = await pool.query(
+      "SELECT id, user_name, plataforma, url, discord_id, estado, ultima_actualizacion FROM streamers ORDER BY id DESC"
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("Error al obtener streamers:", err.message);
+    res.status(500).json({ error: "Error al obtener streamers" });
   }
 });
+
+// Crear streamer (ahora acepta discord_id y NO obliga URL)
+app.post("/streamers", async (req, res) => {
+  try {
+    const { user_name, plataforma, url, discord_id, estado = false } = req.body || {};
+
+    if (!user_name || !plataforma) {
+      return res.status(400).json({ error: "user_name y plataforma son obligatorios" });
+    }
+    if (discord_id && !/^[0-9]{17,19}$/.test(String(discord_id))) {
+      return res.status(400).json({ error: "Discord ID inválido (17–19 dígitos numéricos)" });
+    }
+
+    const q = `
+      INSERT INTO streamers (user_name, plataforma, url, estado, discord_id, ultima_actualizacion)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      RETURNING id, user_name, plataforma, url, discord_id, estado, ultima_actualizacion
+    `;
+    const params = [user_name.trim(), plataforma, url || null, !!estado, discord_id || null];
+    const { rows } = await pool.query(q, params);
+
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error("Error al añadir streamer:", err.message);
+    res.status(500).json({ error: "Error al añadir streamer" });
+  }
+});
+
+// Actualizar streamer por ID (puedes mandar cualquiera de estos: estado, url, discord_id)
+app.put("/streamers/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    let { estado, url, discord_id } = req.body || {};
+
+    // Validación discord_id si viene
+    if (discord_id !== undefined) {
+      discord_id = String(discord_id).trim();
+      if (discord_id !== "" && !/^[0-9]{17,19}$/.test(discord_id)) {
+        return res.status(400).json({ error: "Discord ID inválido (17–19 dígitos numéricos)" });
+      }
+    }
+
+    // Construir SET dinámico
+    const sets = [];
+    const vals = [];
+    let i = 1;
+
+    if (estado !== undefined) {
+      sets.push(`estado = $${i++}`);
+      vals.push(!!estado);
+      // si tocas estado, actualizamos fecha también
+      sets.push(`ultima_actualizacion = NOW()`);
+    }
+    if (url !== undefined) {
+      sets.push(`url = $${i++}`);
+      vals.push(url || null);
+    }
+    if (discord_id !== undefined) {
+      sets.push(`discord_id = $${i++}`);
+      vals.push(discord_id || null);
+    }
+
+    if (sets.length === 0) return res.status(400).json({ error: "Nada que actualizar" });
+
+    const q = `UPDATE streamers SET ${sets.join(", ")} WHERE id = $${i} RETURNING id, user_name, plataforma, url, discord_id, estado, ultima_actualizacion`;
+    vals.push(id);
+
+    const { rows } = await pool.query(q, vals);
+    if (!rows[0]) return res.status(404).json({ error: "Streamer no encontrado" });
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("Error al actualizar streamer:", err.message);
+    res.status(500).json({ error: "Error al actualizar streamer" });
+  }
+});
+
 
 
 // 🟢 Ruta para vídeos de YouTube combinados y cacheados
