@@ -159,6 +159,65 @@ app.delete("/streamers/:id", async (req, res) => {
   }
 });
 
+// 🔎 Devuelve SOLO los streamers en directo cuyo título contiene "Vilanova City" (con o sin "RP")
+app.get("/streamers/filtrados", async (req, res) => {
+  try {
+    const client_id = process.env.TWITCH_CLIENT_ID;
+    const client_secret = process.env.TWITCH_CLIENT_SECRET;
+
+    // 1) Token de Twitch
+    const tokenRes = await axios.post(
+      `https://id.twitch.tv/oauth2/token?client_id=${client_id}&client_secret=${client_secret}&grant_type=client_credentials`
+    );
+    const access_token = tokenRes.data.access_token;
+
+    // 2) Streamers en BD
+    const { rows: streamers } = await pool.query(
+      "SELECT id, user_name, plataforma, url, estado FROM streamers ORDER BY id"
+    );
+    if (streamers.length === 0) return res.json([]);
+
+    // 3) Solo Twitch para consultar Helix
+    const twitchUsers = streamers
+      .filter(s => s.plataforma === "Twitch")
+      .map(s => s.user_name);
+
+    if (twitchUsers.length === 0) {
+      // si no hay de Twitch, devolvemos los que ya estén marcados en directo
+      return res.json(streamers.filter(s => s.estado === true));
+    }
+
+    // 4) Streams activos ahora
+    const helix = await axios.get(
+      `https://api.twitch.tv/helix/streams?user_login=${twitchUsers.join("&user_login=")}`,
+      { headers: { "Client-ID": client_id, Authorization: `Bearer ${access_token}` } }
+    );
+
+    const vivos = helix.data?.data || [];
+
+    // 5) Filtro de título: VilanovaCity | Vilanova City | VilanovaCityRP | Vilanova City RP (case-insensitive)
+    const VILANOVA_RE = /(vilanova\s*city(\s*rp)?)/i;
+
+    // Set con los logins válidos (que están en directo y cuyo título pasa el filtro)
+    const loginsValidos = new Set(
+      vivos
+        .filter(v => VILANOVA_RE.test(v.title || ""))
+        .map(v => String(v.user_login).toLowerCase())
+    );
+
+    // 6) Respuesta: de tu BD, solo los que (a) están en directo y (b) están en loginsValidos
+    const respuesta = streamers.filter(
+      s => s.estado === true && loginsValidos.has(String(s.user_name).toLowerCase())
+    );
+
+    res.json(respuesta);
+  } catch (err) {
+    console.error("Error en /streamers/filtrados:", err.message);
+    res.status(500).json({ error: "Error al filtrar streamers" });
+  }
+});
+
+
 
 
 
