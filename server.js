@@ -138,6 +138,28 @@ app.put("/streamers/:id", async (req, res) => {
   }
 });
 
+// Ruta para eliminar streamer
+app.delete("/streamers/:id", async (req, res) => {
+  try {
+    const idNum = Number(req.params.id);
+    if (!Number.isInteger(idNum) || idNum <= 0) {
+      return res.status(400).json({ error: "ID inválido" });
+    }
+
+    const result = await pool.query("DELETE FROM streamers WHERE id = $1", [idNum]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Streamer no encontrado" });
+    }
+
+    return res.sendStatus(204); // OK sin cuerpo
+  } catch (err) {
+    console.error("Error al eliminar streamer:", err);
+    return res.status(500).json({ error: "Error al eliminar streamer" });
+  }
+});
+
+
 
 
 // 🟢 Ruta para vídeos de YouTube combinados y cacheados
