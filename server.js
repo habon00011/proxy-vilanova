@@ -238,6 +238,7 @@ app.get("/api/youtube-videos", async (req, res) => {
   const CHANNEL_IDS = [
     "UCD2bEZM0Z4HmKpBwPh_lyWg",
     "UCL3NvneOnKeGgKQcekBe31Q",
+    "UCIZXEOLtUGO2JyGK9RO49BQ",
   ];
   const PALABRAS_CLAVE = ["VilanovaCity"];
   const MAX_RESULTADOS = 15;
