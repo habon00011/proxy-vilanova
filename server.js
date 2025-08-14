@@ -240,7 +240,7 @@ app.get("/api/youtube-videos", async (req, res) => {
     "UCL3NvneOnKeGgKQcekBe31Q",
     "UCIZXEOLtUGO2JyGK9RO49BQ",
   ];
-  const PALABRAS_CLAVE = ["VilanovaCity"];
+  const PALABRAS_CLAVE = ["Vilanova City"];
   const MAX_RESULTADOS = 15;
 
   const getDurationInSeconds = (iso) => {
