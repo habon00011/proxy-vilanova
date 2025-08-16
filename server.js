@@ -544,9 +544,13 @@ app.post("/api/staff/login-pin", pinLimiter, async (req, res) => {
   }
 
   const token = jwt.sign({ role: "staff" }, process.env.JWT_SECRET, { expiresIn: "2h" });
-  res.cookie("staff_session", token, {
-    httpOnly: true, secure: true, sameSite: "lax", maxAge: 2 * 60 * 60 * 1000,
-  });
+ const isProd = process.env.NODE_ENV === "production";
+res.cookie("staff_session", token, {
+  httpOnly: true,
+  secure: isProd,   // ⬅️ false en local, true en producción
+  sameSite: "lax",
+  maxAge: 2 * 60 * 60 * 1000,
+});
 
   await logDiscord({
     title: "✅ Acceso concedido Panel Staff",
