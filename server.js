@@ -3,17 +3,25 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const { Pool } = require('pg');
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.use(cookieParser());
+app.use(cors({ origin: process.env.ALLOWED_ORIGIN, credentials: true }));
 
-app.use(cors());
 app.use(express.json({ limit: "5mb" }));
-
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
+});
+
+// para logica de staff
+const pinLimiter = rateLimit({
+  windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false,
 });
 
 // 🚗 Ruta para jugadores
@@ -505,6 +513,97 @@ app.get('/admin/streamers', async (req, res) => {
     console.error("Error al obtener streamers:", err.message);
     res.status(500).json({ error: 'Error al obtener streamers' });
   }
+});
+
+// Helpers
+async function logDiscord(embed) {
+  const url = process.env.DISCORD_WEBHOOK_LOGS;
+  if (!url) return;
+  try { await axios.post(url, { embeds: [embed] }); } catch {}
+}
+function nowISO(){ return new Date().toISOString(); }
+
+// --- LOGIN por PIN ---
+app.post("/api/staff/login-pin", pinLimiter, async (req, res) => {
+  const { pin, alias } = req.body || {};
+  const metaIP = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  const ua = String(req.headers["user-agent"] || "").slice(0, 180);
+
+  if (!pin || pin !== process.env.STAFF_PANEL_PIN) {
+    await logDiscord({
+      title: "❌ Intento fallido Panel Staff",
+      color: 0xE74C3C,
+      fields: [
+        { name: "Alias", value: alias ? String(alias) : "—", inline: true },
+        { name: "IP", value: String(metaIP), inline: true },
+        { name: "User-Agent", value: ua, inline: false },
+      ],
+      timestamp: nowISO(),
+    });
+    return res.status(401).json({ ok: false, msg: "PIN incorrecto" });
+  }
+
+  const token = jwt.sign({ role: "staff" }, process.env.JWT_SECRET, { expiresIn: "2h" });
+  res.cookie("staff_session", token, {
+    httpOnly: true, secure: true, sameSite: "lax", maxAge: 2 * 60 * 60 * 1000,
+  });
+
+  await logDiscord({
+    title: "✅ Acceso concedido Panel Staff",
+    color: 0x2ECC71,
+    fields: [
+      { name: "Alias", value: alias ? String(alias) : "—", inline: true },
+      { name: "IP", value: String(metaIP), inline: true },
+      { name: "User-Agent", value: ua, inline: false },
+    ],
+    timestamp: nowISO(),
+  });
+
+  return res.json({ ok: true });
+});
+
+// --- Comprobar sesión ---
+app.get("/api/staff/me", (req, res) => {
+  try {
+    const t = req.cookies?.staff_session;
+    if (!t) return res.json({ ok: false });
+    jwt.verify(t, process.env.JWT_SECRET);
+    return res.json({ ok: true });
+  } catch {
+    return res.json({ ok: false });
+  }
+});
+
+// --- Logout ---
+app.post("/api/staff/logout", async (req, res) => {
+  res.clearCookie("staff_session", { httpOnly: true, secure: true, sameSite: "lax" });
+  await logDiscord({
+    title: "🔒 Logout Panel Staff",
+    color: 0x5865F2,
+    timestamp: nowISO(),
+  });
+  res.json({ ok: true });
+});
+
+// --- Middleware para proteger endpoints del panel ---
+function requireStaff(req, res, next) {
+  try {
+    const t = req.cookies?.staff_session;
+    if (!t) return res.status(401).json({ ok: false, msg: "No autorizado" });
+    const data = jwt.verify(t, process.env.JWT_SECRET);
+    if (data.role !== "staff") return res.status(401).json({ ok: false, msg: "No autorizado" });
+    next();
+  } catch {
+    return res.status(401).json({ ok: false, msg: "Sesión inválida" });
+  }
+}
+
+// Ejemplos protegidos:
+app.get("/api/staff/locales", requireStaff, async (req, res) => {
+  res.json({ ok: true, data: [] });
+});
+app.post("/api/staff/streamers", requireStaff, async (req, res) => {
+  res.json({ ok: true });
 });
 
 
