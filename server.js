@@ -580,7 +580,11 @@ app.get("/api/staff/me", (req, res) => {
 
 // --- Logout ---
 app.post("/api/staff/logout", async (req, res) => {
-  res.clearCookie("staff_session", { httpOnly: true, secure: true, sameSite: "lax" });
+  res.clearCookie("staff_session", {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: "lax",
+});
   await logDiscord({
     title: "🔒 Logout Panel Staff",
     color: 0x5865F2,
