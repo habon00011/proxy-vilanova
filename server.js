@@ -222,10 +222,8 @@ app.get("/streamers/filtrados", async (req, res) => {
 
 
 // 🟢 Ruta para vídeos de YouTube combinados y cacheados
-let cacheVideos = {
-  lastUpdated: 0,
-  videos: [],
-};
+// 🟢 Ruta para vídeos de YouTube combinados y cacheados
+let cacheVideos = { lastUpdated: 0, videos: [] };
 
 app.get("/api/youtube-videos", async (req, res) => {
   const ahora = Date.now();
@@ -238,74 +236,94 @@ app.get("/api/youtube-videos", async (req, res) => {
   const CHANNEL_IDS = [
     "UCD2bEZM0Z4HmKpBwPh_lyWg",
     "UCL3NvneOnKeGgKQcekBe31Q",
-    "UCIZXEOLtUGO2JyGK9RO49BQ",
+    "UCIZXEOLtUGO2JyGK9RO49BQ", // 👈 el que me pasaste
   ];
-  const PALABRAS_CLAVE = ["Vilanova City"];
-  const MAX_RESULTADOS = 15;
 
+  // ✅ Ponemos todo en minúsculas y ampliamos keywords
+  const PALABRAS_CLAVE = ["vilanova", "vilanova city", "vilanovacity", "directo", "vuelvo"];
+
+  // ✅ Soporta horas en ISO8601 (PT#H#M#S)
   const getDurationInSeconds = (iso) => {
-    const match = iso.match(/PT(?:(\d+)M)?(?:(\d+)S)?/);
-    const min = parseInt(match?.[1] || 0);
-    const sec = parseInt(match?.[2] || 0);
-    return min * 60 + sec;
+    const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    const h = parseInt(m?.[1] || 0, 10);
+    const min = parseInt(m?.[2] || 0, 10);
+    const sec = parseInt(m?.[3] || 0, 10);
+    return h * 3600 + min * 60 + sec;
   };
 
   try {
     let todosVideos = [];
 
     for (const id of CHANNEL_IDS) {
+      // 1) uploads playlist del canal
       const res1 = await axios.get(
         `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${id}&key=${API_KEY}`
       );
-      const playlistId = res1.data.items[0].contentDetails.relatedPlaylists.uploads;
+      const items1 = res1.data?.items || [];
+      if (!items1.length) {
+        console.warn(`Canal sin contentDetails o ID inválido: ${id}`);
+        continue;
+      }
+      const playlistId = items1[0]?.contentDetails?.relatedPlaylists?.uploads;
+      if (!playlistId) continue;
 
+      // 2) últimos vídeos del canal
       const res2 = await axios.get(
         `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${playlistId}&maxResults=50&key=${API_KEY}`
       );
+      const items2 = res2.data?.items || [];
 
-      const filtrados = res2.data.items.filter((video) => {
-        const titulo = video.snippet.title.toLowerCase();
+      // ✅ Filtro por keywords (todo en lowercase)
+      const filtrados = items2.filter((video) => {
+        const titulo = (video?.snippet?.title || "").toLowerCase();
         return PALABRAS_CLAVE.some((p) => titulo.includes(p));
       });
 
+      if (!filtrados.length) continue;
+
+      // 3) detalles para duración y filtrar Shorts (< 180s)
       const ids = filtrados.map(v => v.snippet.resourceId.videoId).join(",");
       const res3 = await axios.get(
         `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${API_KEY}`
       );
-
-      const sinShorts = res3.data.items.filter(v => getDurationInSeconds(v.contentDetails.duration) >= 180);
-      const finales = filtrados.filter(v =>
-        sinShorts.some(s => s.id === v.snippet.resourceId.videoId)
+      const detalles = res3.data?.items || [];
+      const permitidos = new Set(
+        detalles
+          .filter(v => getDurationInSeconds(v.contentDetails?.duration || "PT0S") >= 180)
+          .map(v => v.id)
       );
 
+      const finales = filtrados.filter(v => permitidos.has(v.snippet.resourceId.videoId));
       todosVideos.push(...finales);
     }
 
+    // Reparto equitativo por canal
     const porCanal = {};
-    todosVideos.forEach(v => {
+    for (const v of todosVideos) {
       const canal = v.snippet.channelId;
-      if (!porCanal[canal]) porCanal[canal] = [];
-      porCanal[canal].push(v);
-    });
+      (porCanal[canal] ||= []).push(v);
+    }
 
-    let mezclados = [];
+    const MAX_RESULTADOS = 15;
+    const mezclados = [];
     while (mezclados.length < MAX_RESULTADOS) {
       let añadido = false;
-      for (const canal in porCanal) {
+      for (const canal of Object.keys(porCanal)) {
         const video = porCanal[canal].shift();
-        if (video) {
-          mezclados.push(video);
-          añadido = true;
-        }
+        if (video) { mezclados.push(video); añadido = true; }
       }
       if (!añadido) break;
     }
 
     cacheVideos.videos = mezclados;
     cacheVideos.lastUpdated = ahora;
+
+    // Log útil para depurar
+    console.log(`YouTube OK: ${mezclados.length} vídeos tras filtro/shorts`);
+
     res.json(mezclados);
   } catch (e) {
-    console.error("Error cargando vídeos de YouTube:", e.message);
+    console.error("Error cargando vídeos de YouTube:", e?.response?.data || e.message);
     res.status(500).json({ error: "Error al cargar vídeos de YouTube" });
   }
 });
