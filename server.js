@@ -2,22 +2,34 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
-const { Pool } = require('pg');
+const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const isProd = process.env.NODE_ENV === "production";
+
+app.set("trust proxy", 1);
 app.use(cookieParser());
-app.use(cors({ origin: process.env.ALLOWED_ORIGIN, credentials: true }));
+
+const allowed = [process.env.ALLOWED_ORIGIN, "http://localhost:5173"].filter(Boolean);
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    return allowed.includes(origin) ? cb(null, true) : cb(new Error("CORS blocked"));
+  },
+  credentials: true,
+}));
 
 app.use(express.json({ limit: "5mb" }));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
 });
+
 
 // para logica de staff
 const pinLimiter = rateLimit({
