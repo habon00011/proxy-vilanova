@@ -554,12 +554,4 @@ app.get("/api/staff/entrada", async (req, res) => {
   res.json({ ok: true, msg: "Log enviado a Discord" });
 });
 
-// Ejemplos protegidos:
-app.get("/api/staff/locales", requireStaff, async (req, res) => {
-  res.json({ ok: true, data: [] });
-});
-app.post("/api/staff/streamers", requireStaff, async (req, res) => {
-  res.json({ ok: true });
-});
-
 
