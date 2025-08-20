@@ -537,86 +537,31 @@ function nowISO(){ return new Date().toISOString(); }
 
 // --- LOGIN por PIN ---
 app.post("/api/staff/login-pin", pinLimiter, async (req, res) => {
-  const { pin, alias } = req.body || {};
-  const metaIP = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  const ua = String(req.headers["user-agent"] || "").slice(0, 180);
+  const inputPin = String(req.body?.pin ?? "").trim();
+  const configuredPin = String(process.env.STAFF_PANEL_PIN ?? "").trim();
 
-  if (!pin || pin !== process.env.STAFF_PANEL_PIN) {
-    await logDiscord({
-      title: "❌ Intento fallido Panel Staff",
-      color: 0xE74C3C,
-      fields: [
-        { name: "Alias", value: alias ? String(alias) : "—", inline: true },
-        { name: "IP", value: String(metaIP), inline: true },
-        { name: "User-Agent", value: ua, inline: false },
-      ],
-      timestamp: nowISO(),
-    });
-    return res.status(401).json({ ok: false, msg: "PIN incorrecto" });
+  // 🔍 logs TEMPORALES para verificar que Render lee el PIN
+  console.log("[LOGIN] inputLen:", inputPin.length, "envLen:", configuredPin.length);
+
+  if (!configuredPin) {
+    return res.status(500).json({ ok:false, msg:"PIN no configurado (env)" });
+  }
+  if (inputPin !== configuredPin) {
+    await logDiscord({ /* ... */ });
+    return res.status(401).json({ ok:false, msg:"PIN incorrecto" });
   }
 
   const token = jwt.sign({ role: "staff" }, process.env.JWT_SECRET, { expiresIn: "2h" });
- const isProd = process.env.NODE_ENV === "production";
-res.cookie("staff_session", token, {
-  httpOnly: true,
-  secure: isProd,   // ⬅️ false en local, true en producción
-  sameSite: "lax",
-  maxAge: 2 * 60 * 60 * 1000,
-});
-
-  await logDiscord({
-    title: "✅ Acceso concedido Panel Staff",
-    color: 0x2ECC71,
-    fields: [
-      { name: "Alias", value: alias ? String(alias) : "—", inline: true },
-      { name: "IP", value: String(metaIP), inline: true },
-      { name: "User-Agent", value: ua, inline: false },
-    ],
-    timestamp: nowISO(),
+  res.cookie("staff_session", token, {
+    httpOnly: true,
+    secure: isProd,           // true en Render, false en local
+    sameSite: "lax",
+    maxAge: 2 * 60 * 60 * 1000,
   });
 
+  await logDiscord({ /* ... */ });
   return res.json({ ok: true });
 });
-
-// --- Comprobar sesión ---
-app.get("/api/staff/me", (req, res) => {
-  try {
-    const t = req.cookies?.staff_session;
-    if (!t) return res.json({ ok: false });
-    jwt.verify(t, process.env.JWT_SECRET);
-    return res.json({ ok: true });
-  } catch {
-    return res.json({ ok: false });
-  }
-});
-
-// --- Logout ---
-app.post("/api/staff/logout", async (req, res) => {
-  res.clearCookie("staff_session", {
-  httpOnly: true,
-  secure: isProd,
-  sameSite: "lax",
-});
-  await logDiscord({
-    title: "🔒 Logout Panel Staff",
-    color: 0x5865F2,
-    timestamp: nowISO(),
-  });
-  res.json({ ok: true });
-});
-
-// --- Middleware para proteger endpoints del panel ---
-function requireStaff(req, res, next) {
-  try {
-    const t = req.cookies?.staff_session;
-    if (!t) return res.status(401).json({ ok: false, msg: "No autorizado" });
-    const data = jwt.verify(t, process.env.JWT_SECRET);
-    if (data.role !== "staff") return res.status(401).json({ ok: false, msg: "No autorizado" });
-    next();
-  } catch {
-    return res.status(401).json({ ok: false, msg: "Sesión inválida" });
-  }
-}
 
 // Ejemplos protegidos:
 app.get("/api/staff/locales", requireStaff, async (req, res) => {
