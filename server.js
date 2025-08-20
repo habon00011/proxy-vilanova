@@ -526,41 +526,32 @@ app.get('/admin/streamers', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener streamers' });
   }
 });
-
-// Helpers
+// Función helper para mandar log a Discord
 async function logDiscord(embed) {
   const url = process.env.DISCORD_WEBHOOK_LOGS;
   if (!url) return;
-  try { await axios.post(url, { embeds: [embed] }); } catch {}
+  try {
+    await axios.post(url, { embeds: [embed] });
+  } catch (err) {
+    console.error("Error enviando a Discord:", err.message);
+  }
 }
-function nowISO(){ return new Date().toISOString(); }
 
-// --- LOGIN por PIN ---
-app.post("/api/staff/login-pin", pinLimiter, async (req, res) => {
-  const inputPin = String(req.body?.pin ?? "").trim();
-  const configuredPin = String(process.env.STAFF_PANEL_PIN ?? "").trim();
+// --- Endpoint que se llama cuando alguien entra al panel ---
+app.get("/api/staff/entrada", async (req, res) => {
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
 
-  // 🔍 logs TEMPORALES para verificar que Render lee el PIN
-  console.log("[LOGIN] inputLen:", inputPin.length, "envLen:", configuredPin.length);
-
-  if (!configuredPin) {
-    return res.status(500).json({ ok:false, msg:"PIN no configurado (env)" });
-  }
-  if (inputPin !== configuredPin) {
-    await logDiscord({ /* ... */ });
-    return res.status(401).json({ ok:false, msg:"PIN incorrecto" });
-  }
-
-  const token = jwt.sign({ role: "staff" }, process.env.JWT_SECRET, { expiresIn: "2h" });
-  res.cookie("staff_session", token, {
-    httpOnly: true,
-    secure: isProd,           // true en Render, false en local
-    sameSite: "lax",
-    maxAge: 2 * 60 * 60 * 1000,
+  await logDiscord({
+    title: "🚪 Entrada al Panel Staff",
+    color: 0x3498db,
+    fields: [
+      { name: "IP", value: String(ip), inline: true },
+      { name: "User-Agent", value: String(req.headers["user-agent"] || ""), inline: false },
+    ],
+    timestamp: new Date().toISOString(),
   });
 
-  await logDiscord({ /* ... */ });
-  return res.json({ ok: true });
+  res.json({ ok: true, msg: "Log enviado a Discord" });
 });
 
 // Ejemplos protegidos:
