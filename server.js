@@ -552,7 +552,4 @@ app.get("/api/staff/entrada", async (req, res) => {
   }
 });
 
-  res.json({ ok: true, msg: "Log enviado a Discord" });
-});
-
 
