@@ -36,6 +36,61 @@ const pinLimiter = rateLimit({
   windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false,
 });
 
+
+// ---- Discord webhook con cola y backoff ----
+const queue = [];
+let sending = false;
+let lastSendAt = 0;
+
+async function sendToDiscord(payload) {
+  const url = process.env.DISCORD_WEBHOOK_LOGS;
+  if (!url) return;
+  try {
+    await axios.post(url, payload); // Discord devuelve 204 No Content si ok
+  } catch (err) {
+    const code = err?.response?.status;
+    if (code === 429) {
+      const ra = Number(err?.response?.headers?.['retry-after']) || 2;
+      throw Object.assign(new Error('429'), { retryAfterMs: ra * 1000 });
+    }
+    throw err;
+  }
+}
+
+async function processQueue() {
+  if (sending) return;
+  if (!queue.length) return;
+
+  sending = true;
+
+  const now = Date.now();
+  const drift = Math.max(0, 1200 - (now - lastSendAt));
+  if (drift > 0) await new Promise(r => setTimeout(r, drift));
+
+  const job = queue.shift();
+  try {
+    await sendToDiscord(job.payload);
+    lastSendAt = Date.now();
+    sending = false;
+    setTimeout(processQueue, 50);
+  } catch (e) {
+    sending = false;
+    if (e.message === '429') {
+      setTimeout(processQueue, e.retryAfterMs || 2000);
+    } else {
+      console.error("Discord webhook error:", e?.message || e);
+      setTimeout(processQueue, 200);
+    }
+  }
+}
+
+function logDiscord(embed) {
+  const url = process.env.DISCORD_WEBHOOK_LOGS;
+  if (!url) return;
+  queue.push({ payload: { embeds: [embed] } });
+  processQueue();
+}
+
 // 🚗 Ruta para jugadores
 app.get("/players", async (req, res) => {
   try {
@@ -526,30 +581,22 @@ app.get('/admin/streamers', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener streamers' });
   }
 });
-async function logDiscord(embed) {
-  const url = process.env.DISCORD_WEBHOOK_LOGS;
-  if (!url) return; // si no hay URL, no falles
-  try { await axios.post(url, { embeds: [embed] }); }
-  catch (e) { console.error("Discord webhook:", e.message); }
-}
 
-app.get("/api/staff/entrada", async (req, res) => {
-  try {
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-    await logDiscord({
-      title: "🚪 Entrada al Panel Staff",
-      color: 0x3498db,
-      fields: [
-        { name: "IP", value: String(ip), inline: true },
-        { name: "User-Agent", value: String(req.headers["user-agent"] || ""), inline: false },
-      ],
-      timestamp: new Date().toISOString(),
-    });
-    return res.json({ ok: true, msg: "Log enviado a Discord" });
-  } catch (e) {
-    console.error("entrada error:", e.message);
-    return res.status(200).json({ ok: true, msg: "Log no crítico" }); // nunca rompas el login
-  }
+app.post("/api/staff/entrada", async (req, res) => {
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  const ua = String(req.headers["user-agent"] || "");
+
+  logDiscord({
+    title: "🚪 Entrada al Panel Staff",
+    color: 0x3498db,
+    fields: [
+      { name: "IP", value: String(ip), inline: true },
+      { name: "User-Agent", value: ua.slice(0, 180), inline: false },
+    ],
+    timestamp: new Date().toISOString(),
+  });
+
+  res.json({ ok: true });
 });
 
 
