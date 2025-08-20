@@ -526,30 +526,31 @@ app.get('/admin/streamers', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener streamers' });
   }
 });
-// Función helper para mandar log a Discord
 async function logDiscord(embed) {
   const url = process.env.DISCORD_WEBHOOK_LOGS;
-  if (!url) return;
-  try {
-    await axios.post(url, { embeds: [embed] });
-  } catch (err) {
-    console.error("Error enviando a Discord:", err.message);
-  }
+  if (!url) return; // si no hay URL, no falles
+  try { await axios.post(url, { embeds: [embed] }); }
+  catch (e) { console.error("Discord webhook:", e.message); }
 }
 
-// --- Endpoint que se llama cuando alguien entra al panel ---
 app.get("/api/staff/entrada", async (req, res) => {
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-
-  await logDiscord({
-    title: "🚪 Entrada al Panel Staff",
-    color: 0x3498db,
-    fields: [
-      { name: "IP", value: String(ip), inline: true },
-      { name: "User-Agent", value: String(req.headers["user-agent"] || ""), inline: false },
-    ],
-    timestamp: new Date().toISOString(),
-  });
+  try {
+    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    await logDiscord({
+      title: "🚪 Entrada al Panel Staff",
+      color: 0x3498db,
+      fields: [
+        { name: "IP", value: String(ip), inline: true },
+        { name: "User-Agent", value: String(req.headers["user-agent"] || ""), inline: false },
+      ],
+      timestamp: new Date().toISOString(),
+    });
+    return res.json({ ok: true, msg: "Log enviado a Discord" });
+  } catch (e) {
+    console.error("entrada error:", e.message);
+    return res.status(200).json({ ok: true, msg: "Log no crítico" }); // nunca rompas el login
+  }
+});
 
   res.json({ ok: true, msg: "Log enviado a Discord" });
 });
