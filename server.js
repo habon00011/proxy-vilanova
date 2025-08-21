@@ -534,56 +534,76 @@ app.get('/admin/streamers', async (req, res) => {
   }
 });
 
-// --- Discord webhook: cola + backoff anti-429 ---
+// --- Discord webhook: cola + backoff anti-429 (con logs) ---
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_LOGS;
 
-const dq = [];            // cola de mensajes
-let dqSending = false;    // ¿estamos enviando?
-let dqLast = 0;           // timestamp del último envío OK
+const dq = [];               // cola de trabajos
+let dqSending = false;       // flag de envío en curso
+let dqLast = 0;              // último ok
+let consec429 = 0;           // 429 consecutivos
+
+const BASE_DELAY_MS = 1500;  // separación mínima entre mensajes OK (subimos a 1.5s)
 
 async function postDiscord(payload) {
   if (!DISCORD_WEBHOOK) return;
   try {
-    // Discord responde 204 si OK
-    await axios.post(DISCORD_WEBHOOK, payload, {
-      timeout: 10_000,
-      headers: { 'Content-Type': 'application/json' },
+    const res = await axios.post(DISCORD_WEBHOOK, payload, {
+      timeout: 12_000,
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,  // no lances aquí; controlamos abajo
+    });
+
+    if (res.status === 204) return; // OK para webhooks
+    if (res.status === 429) {
+      const ra = Number(res.headers?.["retry-after"]) || 2;
+      throw Object.assign(new Error("RATE_LIMITED"), {
+        retryAfterMs: ra * 1000,
+        headers: res.headers,
+        data: res.data,
+      });
+    }
+    // Otros errores
+    throw Object.assign(new Error(`HTTP_${res.status}`), {
+      status: res.status,
+      headers: res.headers,
+      data: res.data,
     });
   } catch (err) {
-    const status = err?.response?.status;
-    if (status === 429) {
-      // respetamos Retry-After si llega; si no, 2s
-      const ra = Number(err?.response?.headers?.['retry-after']) || 2;
-      const e = new Error('RATE_LIMITED');
-      e.retryAfterMs = ra * 1000;
-      throw e;
-    }
     throw err;
   }
 }
 
 async function runDiscordQueue() {
   if (dqSending || dq.length === 0) return;
-
   dqSending = true;
 
-  // margen mínimo entre mensajes (1.2s) para ir sobrado con rate limit de webhooks
   const now = Date.now();
-  const wait = Math.max(0, 1200 - (now - dqLast));
-  if (wait) await new Promise(r => setTimeout(r, wait));
+  const sinceLast = now - dqLast;
+  const minGap = BASE_DELAY_MS * Math.max(1, Math.min(4, 1 + consec429)); 
+  // si encadenamos 429, aumentamos el gap hasta 6s
+
+  if (sinceLast < minGap) {
+    await new Promise(r => setTimeout(r, minGap - sinceLast));
+  }
 
   const job = dq.shift();
+
   try {
     await postDiscord(job);
+    consec429 = 0;
     dqLast = Date.now();
   } catch (e) {
-    if (e.message === 'RATE_LIMITED') {
-      // devolvemos el trabajo al inicio y esperamos lo que diga Discord
-      dq.unshift(job);
-      await new Promise(r => setTimeout(r, e.retryAfterMs || 2000));
+    if (e.message === "RATE_LIMITED") {
+      consec429++;
+      const wait = Math.max(e.retryAfterMs || 2000, 2000 * consec429); // backoff exponencial suave
+      console.warn(
+        `[Discord] 429. Retry-After=${e.retryAfterMs}ms; consec=${consec429}; waiting=${wait}ms`
+      );
+      dq.unshift(job); // devolvemos el trabajo a la cola
+      await new Promise(r => setTimeout(r, wait));
     } else {
-      console.error('Discord webhook error:', e?.message || e);
-      // seguimos con el siguiente sin bloquear la cola
+      console.error("[Discord] error:", e.message, e.status || "", e.data || "");
+      // no re-enqueue para no atascar la cola si la carga está mal
     }
   } finally {
     dqSending = false;
@@ -592,10 +612,15 @@ async function runDiscordQueue() {
 }
 
 function logDiscord(embed) {
-  if (!DISCORD_WEBHOOK) return;
+  if (!DISCORD_WEBHOOK) {
+    console.warn("[Discord] webhook no configurado");
+    return;
+  }
   dq.push({ embeds: [embed] });
+  console.log(`[Discord] enqueue (cola=${dq.length}) ${embed?.title || ""}`);
   runDiscordQueue();
 }
+
 
 app.get("/api/staff/entrada", logLimiter, async (req, res) => {
   try {
@@ -617,6 +642,15 @@ app.get("/api/staff/entrada", logLimiter, async (req, res) => {
   } catch (e) {
     console.error("entrada error:", e.message);
     return res.status(200).json({ ok: true, msg: "Log no crítico" });
+  }
+});
+
+app.get("/health", async (req, res) => {
+  try {
+    const ping = await axios.get("https://discord.com/api/v10/gateway", { timeout: 7000 });
+    res.json({ ok: true, discord: ping.status });
+  } catch (e) {
+    res.status(500).json({ ok: false, err: e.message });
   }
 });
 
