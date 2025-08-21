@@ -36,6 +36,13 @@ const pinLimiter = rateLimit({
   windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false,
 });
 
+const logLimiter = rateLimit({
+  windowMs: 10_000,  // 10s
+  max: 5,            // como máximo 5 logs por IP/10s
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // 🚗 Ruta para jugadores
 app.get("/players", async (req, res) => {
   try {
@@ -526,28 +533,90 @@ app.get('/admin/streamers', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener streamers' });
   }
 });
-async function logDiscord(embed) {
-  const url = process.env.DISCORD_WEBHOOK_LOGS;
-  if (!url) return; // si no hay URL, no falles
-  try { await axios.post(url, { embeds: [embed] }); }
-  catch (e) { console.error("Discord webhook:", e.message); }
+
+// --- Discord webhook: cola + backoff anti-429 ---
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_LOGS;
+
+const dq = [];            // cola de mensajes
+let dqSending = false;    // ¿estamos enviando?
+let dqLast = 0;           // timestamp del último envío OK
+
+async function postDiscord(payload) {
+  if (!DISCORD_WEBHOOK) return;
+  try {
+    // Discord responde 204 si OK
+    await axios.post(DISCORD_WEBHOOK, payload, {
+      timeout: 10_000,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err) {
+    const status = err?.response?.status;
+    if (status === 429) {
+      // respetamos Retry-After si llega; si no, 2s
+      const ra = Number(err?.response?.headers?.['retry-after']) || 2;
+      const e = new Error('RATE_LIMITED');
+      e.retryAfterMs = ra * 1000;
+      throw e;
+    }
+    throw err;
+  }
 }
 
-app.get("/api/staff/entrada", async (req, res) => {
+async function runDiscordQueue() {
+  if (dqSending || dq.length === 0) return;
+
+  dqSending = true;
+
+  // margen mínimo entre mensajes (1.2s) para ir sobrado con rate limit de webhooks
+  const now = Date.now();
+  const wait = Math.max(0, 1200 - (now - dqLast));
+  if (wait) await new Promise(r => setTimeout(r, wait));
+
+  const job = dq.shift();
+  try {
+    await postDiscord(job);
+    dqLast = Date.now();
+  } catch (e) {
+    if (e.message === 'RATE_LIMITED') {
+      // devolvemos el trabajo al inicio y esperamos lo que diga Discord
+      dq.unshift(job);
+      await new Promise(r => setTimeout(r, e.retryAfterMs || 2000));
+    } else {
+      console.error('Discord webhook error:', e?.message || e);
+      // seguimos con el siguiente sin bloquear la cola
+    }
+  } finally {
+    dqSending = false;
+    setImmediate(runDiscordQueue);
+  }
+}
+
+function logDiscord(embed) {
+  if (!DISCORD_WEBHOOK) return;
+  dq.push({ embeds: [embed] });
+  runDiscordQueue();
+}
+
+app.get("/api/staff/entrada", logLimiter, async (req, res) => {
   try {
     const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-    await logDiscord({
+    const ua = String(req.headers["user-agent"] || "").slice(0, 180);
+
+    logDiscord({
       title: "🚪 Entrada al Panel Staff",
       color: 0x3498db,
       fields: [
         { name: "IP", value: String(ip), inline: true },
-        { name: "User-Agent", value: String(req.headers["user-agent"] || ""), inline: false },
+        { name: "User-Agent", value: ua, inline: false },
       ],
       timestamp: new Date().toISOString(),
     });
-    return res.json({ ok: true, msg: "Log enviado a Discord" });
+
+    // devolvemos OK sin esperar a la cola
+    return res.json({ ok: true, msg: "Log en cola para Discord" });
   } catch (e) {
     console.error("entrada error:", e.message);
-    return res.status(200).json({ ok: true, msg: "Log no crítico" }); // nunca rompas el login
+    return res.status(200).json({ ok: true, msg: "Log no crítico" });
   }
 });
+
