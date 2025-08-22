@@ -533,3 +533,22 @@ app.get('/admin/streamers', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener streamers' });
   }
 });
+
+// --- Login super simple: compara con env y devuelve ok/no ok ---
+app.post("/api/staff/login", async (req, res) => {
+  const { user, pass } = req.body || {};
+  const ok =
+    user && pass &&
+    user === (process.env.STAFF_USER || "") &&
+    pass === (process.env.STAFF_PASS || "");
+
+  if (!ok) return res.status(401).json({ ok: false, msg: "Credenciales inválidas" });
+  return res.json({ ok: true });
+});
+
+// (opcional) Para que tu front pueda comprobar “¿sigo logueado?”,
+// aquí siempre devolvemos false porque NO estamos guardando sesión.
+// Si no lo usas, puedes omitirlo.
+app.get("/api/staff/me", (req, res) => {
+  res.json({ ok: false });
+});
